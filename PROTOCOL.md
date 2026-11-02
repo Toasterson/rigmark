@@ -172,3 +172,34 @@ prints each changed suite flag, the complete extra request body, and comparison
 ID. "DEFAULT SETTINGS" describes the suite parameters, not a universal model
 reasoning profile: the separately printed request body remains part of the
 comparison. Hardware and request settings wrap rather than being truncated.
+
+### Optional warm-up and conditional uncertainty
+
+`--warmup-runs N` (default 0) runs N excluded requests before **each decode
+workload**, with distinct nonces and retained `warmup_runs` rows. Measured
+nonces, sample counts and existing summaries stay unchanged. Prefill and capped
+concurrency are not warmed by this option. This does not prove thermal steady
+state, cache isolation or independent boot repeatability.
+
+`--uncertainty` adds `decode_median_ci95`: a deterministic percentile bootstrap
+of each workload's median request rate, 10,000 resamples with replacement,
+seed 20260905, sorted indices 249 and 9749. Fewer than five observations produce
+`insufficient_samples`. These are **conditional request-level intervals** for
+one fixed task under the observed service conditions, not task/session-level
+confidence, quality evidence, or a calibrated small-effect significance test.
+The bootstrap assumes exchangeable requests; drift or shared answer effects
+can make it overconfident. Five observations are still weak evidence.
+
+`compare --paired A.json B.json` requires matching settings/source, unique
+identical retained request nonces and passing basic gates. Use it only when the
+operator deliberately paired requests across configurations (prefer interleaved
+A/B runs). It bootstraps the median of per-pair percentage rate changes; an
+interval excluding zero is labelled `resolvable` **within this conditional
+request model only**. Sequential suites do not control session drift. No
+multiplicity correction is applied across the three workloads. Repeat boots
+and broader held-out tasks remain necessary for tuning claims.
+
+Method inspiration: [kindling's excluded warm-ups and paired statistics](https://github.com/kindlingai/glm-5.3-flash-gx10/tree/main/gate/bench)
+and [knapcio/speedbench's paired prompts and false-positive simulation](https://github.com/knapcio/speedbench).
+This implementation copies no source and does not import their calibration
+numbers or claim their broader task coverage.

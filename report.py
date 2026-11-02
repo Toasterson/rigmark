@@ -207,6 +207,15 @@ def render(result: dict[str, Any], fingerprint: str) -> str:
         line("* Predictable JSON ceiling; not general agent performance."),
         line("Decode medians are estimates; rates include streamed reasoning."),
     ])
+    if settings.get("uncertainty"):
+        lines.extend(section("CONDITIONAL REQUEST UNCERTAINTY"))
+        for name in ("code", "prose", "structured"):
+            ci = result["decode"][name]["decode_median_ci95"]
+            if ci["status"] == "estimated":
+                lines.append(line(f"{name}: median 95% CI {ci['lower']:.1f}–{ci['upper']:.1f} tok/s"))
+            else:
+                lines.append(line(f"{name}: CI unavailable (need >=5 samples)"))
+        lines.extend(wrapped_lines("Bootstrap over requests of one fixed task; excludes task and session uncertainty."))
     lines.extend(section("PREFILL"))
     if depths:
         verified = all(

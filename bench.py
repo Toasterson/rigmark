@@ -38,6 +38,7 @@ SOURCE_FILES = (
     "release_check.py",
     "report.py",
     "rigmark",
+    "uncertainty.py",
 )
 
 
@@ -387,13 +388,17 @@ def run_decode(
     seed: int,
     extra_body: dict[str, Any],
     comparison_id: str,
+    warmup_runs: int = 0,
+    uncertainty: bool = False,
 ) -> dict[str, Any]:
     output: dict[str, Any] = {}
     for name, prompt in prompts["workloads"].items():
         rows = []
+        warmups = []
         print(f"decode/{name}: {runs} runs", flush=True)
-        for index in range(runs):
-            request_nonce = nonce(comparison_id, "decode", name, index + 1)
+        for index in range(-warmup_runs, runs):
+            phase = "warmup" if index < 0 else "decode"
+            request_nonce = nonce(comparison_id, phase, name, index + 1)
             payload = build_chat_payload(
                 model,
                 prompts["system"],
@@ -404,10 +409,15 @@ def run_decode(
             )
             row = client.stream("/v1/chat/completions", payload)
             row["run"] = index + 1
+            row["request_nonce"] = request_nonce
             if name == "structured":
                 row["completion_validation"] = validate_structured_row(row)
             else:
                 row["completion_validation"] = validate_visible_output(row)
+            if index < 0:
+                row["excluded"] = True
+                warmups.append(row)
+                continue
             rows.append(row)
             print(
                 f"  {index + 1}: {row['decode_tokens_per_second']:.1f} tok/s, "
@@ -436,6 +446,14 @@ def run_decode(
                 "total": len(rows),
             },
         }
+        if warmup_runs:
+            output[name]["warmup_runs"] = warmups
+        if uncertainty:
+            from uncertainty import interval
+
+            output[name]["decode_median_ci95"] = interval(
+                [row["decode_tokens_per_second"] for row in rows]
+            )
     return output
 
 
@@ -754,6 +772,10 @@ def main() -> None:
     parser.add_argument("--metadata", required=True, type=Path)
     parser.add_argument("--model", default="auto")
     parser.add_argument("--api-key-env", default="OPENAI_API_KEY")
+    parser.add_argument("--warmup-runs", type=int, default=0,
+                        help="excluded requests per decode workload (default: 0)")
+    parser.add_argument("--uncertainty", action="store_true",
+                        help="conditional request-level bootstrap intervals")
     parser.add_argument("--runs", type=int, default=5)
     parser.add_argument(
         "--decode-tokens", type=int, default=8192,
@@ -781,6 +803,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.warmup_runs < 0:
+        parser.error("warm-up count must be nonnegative")
     if args.runs < 1 or args.prefill_runs < 1 or args.concurrency_runs < 1:
         parser.error("run counts must be positive")
     try:
@@ -853,6 +877,8 @@ def main() -> None:
         },
     }
 
+    if args.warmup_runs or args.uncertainty:
+        result["settings"].update(warmup_runs=args.warmup_runs, uncertainty=args.uncertainty)
     try:
         result["decode"] = run_decode(
             client,
@@ -863,6 +889,8 @@ def main() -> None:
             args.seed,
             extra_body,
             args.comparison_id,
+            warmup_runs=args.warmup_runs,
+            uncertainty=args.uncertainty,
         )
         if not args.skip_prefill:
             result["prefill"] = run_prefill(

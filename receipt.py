@@ -271,6 +271,25 @@ def validate_result(result: Any) -> list[str]:
             check_stream_row(
                 errors, row, f"{path}.runs[{index}]", require_v11
             )
+        if "warmup_runs" in value or settings.get("warmup_runs", 0):
+            warmups = value.get("warmup_runs")
+            expected = settings.get("warmup_runs", 0)
+            if not is_int(expected) or expected < 0 or not isinstance(warmups, list) or len(warmups) != expected:
+                errors.append(f"{path}.warmup_runs count is invalid")
+            else:
+                for index, row in enumerate(warmups):
+                    check_stream_row(errors, row, f"{path}.warmup_runs[{index}]", require_v11)
+                    if isinstance(row, dict) and row.get("excluded") is not True:
+                        errors.append(f"{path}.warmup_runs must be excluded")
+        if settings.get("uncertainty") or "decode_median_ci95" in value:
+            from uncertainty import interval
+
+            try:
+                expected_ci = interval([row["decode_tokens_per_second"] for row in rows])
+                if value.get("decode_median_ci95") != expected_ci:
+                    errors.append(f"{path}.decode_median_ci95 does not match raw runs")
+            except (KeyError, TypeError, ValueError):
+                errors.append(f"{path}.decode_median_ci95 is malformed")
         check_summary(
             errors,
             value,

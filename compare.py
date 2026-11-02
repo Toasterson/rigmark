@@ -91,6 +91,8 @@ def comparable(left: dict[str, Any], right: dict[str, Any]) -> list[str]:
         or left_value != right_value
     ):
         mismatches.append(".".join(path))
+    if left.get("settings", {}).get("warmup_runs", 0) != right.get("settings", {}).get("warmup_runs", 0):
+        mismatches.append("settings.warmup_runs")
     return mismatches
 
 
@@ -286,6 +288,8 @@ def main() -> None:
     parser.add_argument("left", type=Path)
     parser.add_argument("right", type=Path)
     parser.add_argument("--allow-mismatch", action="store_true")
+    parser.add_argument("--paired", action="store_true",
+                        help="operator-declared paired requests; conditional bootstrap")
     parser.add_argument("--card", action="store_true", help="print a shareable matched A/B card")
     args = parser.parse_args()
 
@@ -302,6 +306,20 @@ def main() -> None:
         parser.error(
             "results use different protocols/settings: " + ", ".join(mismatches)
         )
+
+    if args.paired:
+        if mismatches or args.card:
+            parser.error("--paired needs matched receipts and the text report")
+        from uncertainty import paired
+
+        print("Conditional request-level paired median change; not a task/session CI.")
+        try:
+            for name in ("code", "prose", "structured"):
+                print(name + ": " + json.dumps(paired(left["decode"][name]["runs"],
+                                                     right["decode"][name]["runs"]), sort_keys=True))
+        except ValueError as error:
+            parser.error(str(error))
+        return
 
     if args.card:
         if mismatches:
