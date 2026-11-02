@@ -172,3 +172,46 @@ prints each changed suite flag, the complete extra request body, and comparison
 ID. "DEFAULT SETTINGS" describes the suite parameters, not a universal model
 reasoning profile: the separately printed request body remains part of the
 comparison. Hardware and request settings wrap rather than being truncated.
+
+### Separate opt-in tool/history serving profile
+
+`./rigmark agentic --base-url http://localhost:8000 --model MODEL --metadata
+metadata.json --output tools.json` runs `rigmark-tools-v1`, **not the core
+three-prompt suite**. Defaults: four sessions, exponential inter-arrival times
+at 0.5 sessions/s with seed 20260905, four client workers, 128 generated tokens
+per request, and 100 ms simulated tool latency. All have explicit CLI flags.
+This is deterministic input replay, not a representative trace of production
+agents or an evaluation of coding quality. The arrival sequence is deterministic;
+wall-clock scheduling and generated outputs can vary.
+
+Each session forces a `read_config(config.json)` function call, appends the fixed
+public tool result after the simulated delay, requests the exact config JSON,
+then appends another turn requiring `READY`. Histories grow across all three
+requests. Tool name/arguments, JSON values, normal stream stops and final marker
+are checked; a failed turn ends its session and remains in the receipt. No model
+output is executed. A server rejecting native tools leaves a failed session,
+not a fabricated successful turn. Stream timing includes function name/argument
+fragments; visible output remains separate, so tool-only responses are measurable.
+
+Receipts retain the schema-1 `protocol`, `run` and `settings` envelopes, add an
+explicit `profile` and `agentic` result section, and retain every complete
+request, tool-call fragment aggregate, fixed tool result/history, response and
+timing. `report` regenerates these cards; core `compare` intentionally refuses
+them. Core inputs, defaults and summaries are unchanged. Raw arrivals and
+client start lag disclose scheduling/worker queueing separately. No generation
+requests outside this profile are included in its summaries.
+
+`time_per_completed_turn_seconds` is summed session wall time (including failed
+attempts and tool waits) divided by completed turns. It is client effort per
+completed turn, not makespan throughput. `mean_completed_turn_seconds` and
+nearest-rank p95/p99 use completed turns only and include the preceding simulated
+tool wait. Counts of attempted turns and completed sessions accompany these
+conditional tails so failures are visible. Sparse tails, especially four
+sessions, are descriptive, not stable capacity estimates. The client retains
+nominal Poisson arrivals even when bounded workers delay request starts.
+
+The broader paired-prompt and arrival-coverage motivation owes to
+[kindling](https://github.com/kindlingai/glm-5.3-flash-gx10/tree/main/gate/bench)
+and [knapcio/speedbench](https://github.com/knapcio/speedbench); no source was
+copied. This small profile does not implement their broader task sampling or
+calibrated comparison methods.

@@ -29,6 +29,7 @@ PROTOCOL_VERSION = "1.3.0"
 NONCE_VERSION = "1.1.0"
 HERE = Path(__file__).resolve().parent
 SOURCE_FILES = (
+    "agentic.py",
     "audit_code.py",
     "bench.py",
     "compare.py",
@@ -135,6 +136,7 @@ class Client:
         output_chunks: list[str] = []
         reasoning_chunks: list[str] = []
         stream_done_marker = False
+        tool_calls: dict[int, dict[str, Any]] = {}
 
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             for raw in response:
@@ -173,7 +175,21 @@ class Client:
                     content = ""
                 if not content and isinstance(choice.get("text"), str):
                     content = choice["text"]
-                measured = reasoning + content
+                tool_text = ""
+                for part in delta.get("tool_calls") or []:
+                    index = part.get("index", 0)
+                    if type(index) is not int or index < 0:
+                        raise RuntimeError("invalid streamed tool-call index")
+                    call = tool_calls.setdefault(index, {"id": "", "type": "function",
+                                                        "function": {"name": "", "arguments": ""}})
+                    if part.get("id"):
+                        call["id"] += part["id"]
+                    function = part.get("function") or {}
+                    for key in ("name", "arguments"):
+                        if isinstance(function.get(key), str):
+                            call["function"][key] += function[key]
+                            tool_text += function[key]
+                measured = reasoning + content + tool_text
                 if measured:
                     now = time.monotonic()
                     first = first or now
@@ -215,6 +231,7 @@ class Client:
         output = "".join(output_chunks)
         reasoning = "".join(reasoning_chunks)
         return {
+            **({"tool_calls": [tool_calls[key] for key in sorted(tool_calls)]} if tool_calls else {}),
             "prompt_tokens": prompt,
             "completion_tokens": completion,
             "cached_prompt_tokens": cached,

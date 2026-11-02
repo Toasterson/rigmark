@@ -173,6 +173,10 @@ def settings_lines(settings: dict[str, Any], protocol: str) -> list[str]:
 
 
 def render(result: dict[str, Any], fingerprint: str) -> str:
+    if result.get("profile") == "rigmark-tools-v1":
+        from agentic import render as render_agentic
+
+        return render_agentic(result, fingerprint)
     errors = validate_result(result)
     if errors:
         raise ValueError("invalid receipt: " + "; ".join(errors))

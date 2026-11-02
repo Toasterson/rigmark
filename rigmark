@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 COMMANDS = {
+    "agentic": "agentic.py",
     "bench": "bench.py",
     "audit-code": "audit_code.py",
     "configure": "configure.py",
