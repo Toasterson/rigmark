@@ -123,10 +123,20 @@ def summarise(sessions):
 
 def validate_result(result):
     errors = []
+    if not isinstance(result, dict):
+        return ["receipt is not an object"]
     if result.get("schema") != 1 or result.get("profile") != PROFILE:
         return ["unsupported agentic receipt"]
     try:
         settings, sessions = result["settings"], result["agentic"]["sessions"]
+        if any(type(settings[key]) is not int or settings[key] < 1
+               for key in ("sessions", "workers", "max_tokens")):
+            return ["invalid profile counts"]
+        if type(settings["seed"]) is not int or any(
+            type(settings[key]) not in (int, float) or not math.isfinite(settings[key])
+            for key in ("arrival_rate", "tool_latency_seconds")
+        ) or settings["arrival_rate"] <= 0 or settings["tool_latency_seconds"] < 0:
+            return ["invalid profile scheduling settings"]
         offsets = arrivals(settings["sessions"], settings["arrival_rate"], settings["seed"])
         if len(sessions) != settings["sessions"]:
             errors.append("session count mismatch")

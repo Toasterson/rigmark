@@ -112,3 +112,10 @@ class AgenticTest(unittest.TestCase):
         self.assertEqual(1.5, summary['mean_completed_turn_seconds'])
         self.assertEqual(2, summary['p95_turn_seconds'])
         self.assertEqual(3, summary['attempted_turns'])
+
+    def test_malformed_receipt_settings_are_reported(self):
+        self.assertTrue(agentic.validate_result(None))
+        result = {'schema': 1, 'profile': agentic.PROFILE, 'settings': {
+            'sessions': 1, 'workers': 1, 'max_tokens': 128, 'seed': 1,
+            'arrival_rate': 0, 'tool_latency_seconds': 0}, 'agentic': {'sessions': []}}
+        self.assertTrue(agentic.validate_result(result))
