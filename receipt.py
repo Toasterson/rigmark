@@ -326,8 +326,23 @@ def validate_result(result: Any) -> list[str]:
         elif capability["status"] != "supported" and settings.get("prefill_depths"):
             errors.append("unsupported/unverified prefill must not have measured depths")
         else:
-            for index, row in enumerate(capability.get("probe_runs", [])):
+            probes = capability.get("probe_runs")
+            if not isinstance(probes, list) or len(probes) > 3:
+                errors.append("capabilities.prefill.probe_runs is malformed")
+                probes = []
+            for index, row in enumerate(probes):
                 check_stream_row(errors, row, f"capabilities.prefill.probe_runs[{index}]", require_v11)
+                if isinstance(row, dict) and (row.get("prompt_tokens") != 64 or row.get("requested_prompt_tokens") != 64):
+                    errors.append("capabilities.prefill probe must use exactly 64 tokens")
+            if capability["status"] == "supported":
+                try:
+                    first, replay, isolated = probes
+                    if first["cached_prompt_tokens"] != 0 or isolated["cached_prompt_tokens"] != 0 or replay["cached_prompt_tokens"] <= 0:
+                        errors.append("capabilities.prefill support lacks cache-isolation evidence")
+                    if first["cache_salt_sha256"] != replay["cache_salt_sha256"] or first["cache_salt_sha256"] == isolated["cache_salt_sha256"]:
+                        errors.append("capabilities.prefill probe salts are not isolated")
+                except (KeyError, TypeError, ValueError):
+                    errors.append("capabilities.prefill support lacks three valid probe rows")
     depths = settings.get("prefill_depths", [])
     prefill = result.get("prefill", {})
     if not isinstance(depths, list) or not isinstance(prefill, dict):

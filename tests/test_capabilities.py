@@ -1,4 +1,8 @@
 import unittest
+import json
+from pathlib import Path
+
+from receipt import validate_result
 import urllib.error
 from unittest.mock import patch
 
@@ -32,3 +36,12 @@ class CapabilitiesTest(unittest.TestCase):
     def test_bad_tokenizer_does_not_claim_support(self):
         with patch('bench.exact_token_ids', side_effect=RuntimeError('empty tokenizer')):
             self.assertEqual('unsupported', bench.probe_prefill(None, 'm')['status'])
+
+    def test_forged_support_or_malformed_probes_are_refused(self):
+        result = json.loads(next(Path('results/reference').glob('*.json')).read_text())
+        result['settings']['capability_detection'] = True
+        result['capabilities'] = {'prefill': {'status': 'supported', 'reason': 'claimed', 'probe_runs': []}}
+        self.assertTrue(any('support lacks' in e for e in validate_result(result)))
+        result['settings']['prefill_depths'] = []
+        result['capabilities']['prefill'].update(status='unknown', probe_runs=None)
+        self.assertTrue(any('probe_runs is malformed' in e for e in validate_result(result)))
