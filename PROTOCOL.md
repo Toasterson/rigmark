@@ -172,3 +172,16 @@ prints each changed suite flag, the complete extra request body, and comparison
 ID. "DEFAULT SETTINGS" describes the suite parameters, not a universal model
 reasoning profile: the separately printed request body remains part of the
 comparison. Hardware and request settings wrap rather than being truncated.
+
+### Explicit cache evidence across phases
+
+Every streamed request retains `cached_prompt_tokens` (integer, including zero,
+or JSON null) and additive `cache_evidence`: `status` is `reported` or `unknown`,
+with the exact `source` usage field or null. Recognised fields are OpenAI-style
+`usage.prompt_tokens_details.cached_tokens` and SGLang's
+`usage.prompt_cache_hit_tokens`. Invalid or conflicting counts fail the request.
+No inference from TTFT or replay speed is made. Existing receipts without the
+additive object remain valid; missing/null counts mean unknown, never zero.
+The card totals evidence across decode, prefill/replay and concurrent streams,
+and flags any unknown counts. First-prefill nonzero counts still fail closed.
+A server count is evidence, not independent cache attestation.

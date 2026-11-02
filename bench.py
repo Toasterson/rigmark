@@ -97,6 +97,24 @@ def chunk_timed_decode_rate(
     return window, rate
 
 
+def cached_token_usage(usage: dict[str, Any], prompt: int) -> tuple[int | None, str | None]:
+    """Only explicit server usage counts; never infer a hit from latency."""
+    details = usage.get("prompt_tokens_details")
+    candidates = {
+        "usage.prompt_tokens_details.cached_tokens": (
+            details.get("cached_tokens") if isinstance(details, dict) else None
+        ),
+        # SGLang's OpenAI-compatible usage extension.
+        "usage.prompt_cache_hit_tokens": usage.get("prompt_cache_hit_tokens"),
+    }
+    present = {source: value for source, value in candidates.items() if value is not None}
+    if any(type(value) is not int or not 0 <= value <= prompt for value in present.values()):
+        raise RuntimeError("server returned invalid cached prompt-token usage")
+    if len(set(present.values())) > 1:
+        raise RuntimeError("server returned conflicting cached prompt-token usage")
+    return next(((value, source) for source, value in present.items()), (None, None))
+
+
 class Client:
     def __init__(self, base_url: str, api_key: str, timeout: float):
         self.base_url = validate_base_url(base_url)
@@ -201,12 +219,7 @@ class Client:
                 )
         completion = usage["completion_tokens"]
         prompt = usage["prompt_tokens"]
-        details = usage.get("prompt_tokens_details")
-        cached = details.get("cached_tokens") if isinstance(details, dict) else None
-        if cached is not None and (
-            type(cached) is not int or not 0 <= cached <= prompt
-        ):
-            raise RuntimeError("server returned invalid cached prompt-token usage")
+        cached, cache_source = cached_token_usage(usage, prompt)
         measured_events = len(measured_chunks)
         decode_window, decode_rate = chunk_timed_decode_rate(
             completion, first, last, measured_events
@@ -218,6 +231,8 @@ class Client:
             "prompt_tokens": prompt,
             "completion_tokens": completion,
             "cached_prompt_tokens": cached,
+            "cache_evidence": {"status": "unknown" if cached is None else "reported",
+                               "source": cache_source},
             "ttft_seconds": round(first - started, 6),
             "time_to_first_visible_seconds": (
                 None if first_visible is None else round(first_visible - started, 6)

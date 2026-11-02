@@ -142,6 +142,16 @@ def check_stream_row(
         ):
             errors.append(f"{path}.{field} must be a non-negative number or null")
     cached = row.get("cached_prompt_tokens")
+    evidence = row.get("cache_evidence")
+    if evidence is not None:
+        expected_status = "unknown" if cached is None else "reported"
+        allowed_sources = {"usage.prompt_tokens_details.cached_tokens", "usage.prompt_cache_hit_tokens"}
+        if not isinstance(evidence, dict) or evidence.get("status") != expected_status or (
+            evidence.get("source") not in allowed_sources if cached is not None
+            else evidence.get("source") is not None
+        ):
+            errors.append(f"{path}.cache_evidence contradicts cached_prompt_tokens")
+
     if cached is not None and (
         not is_int(cached) or cached < 0
         or (is_int(row.get("prompt_tokens")) and cached > row["prompt_tokens"])

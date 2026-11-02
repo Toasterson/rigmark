@@ -207,6 +207,23 @@ def render(result: dict[str, Any], fingerprint: str) -> str:
         line("* Predictable JSON ceiling; not general agent performance."),
         line("Decode medians are estimates; rates include streamed reasoning."),
     ])
+    lines.extend(section("CACHE EVIDENCE"))
+    cache_rows = [row for name in ("code", "prose", "structured")
+                  for row in result["decode"][name]["runs"]]
+    cache_rows.extend(row for depth in depths for phase in ("cold", "warm_replay")
+                      for row in result["prefill"][str(depth)][phase]["runs"])
+    cache_rows.extend(row for level in levels
+                      for round_ in result["concurrency"][str(level)]["rounds"]
+                      for row in round_["streams"])
+    unknown = sum(row.get("cached_prompt_tokens") is None for row in cache_rows)
+    hits = sum((row.get("cached_prompt_tokens") or 0) > 0 for row in cache_rows)
+    reported = [row["cached_prompt_tokens"] for row in cache_rows
+                if row.get("cached_prompt_tokens") is not None]
+    lines.extend(wrapped_lines(f"All phases: {len(reported)}/{len(cache_rows)} counts reported; "
+                               f"{hits} requests with hits; {sum(reported)} cached tokens."))
+    if unknown:
+        lines.extend(wrapped_lines(f"CACHE UNKNOWN: {unknown}/{len(cache_rows)} requests lack server counts; hits cannot be ruled out."))
+    lines.append(line("Server usage evidence, not independent cache attestation."))
     lines.extend(section("PREFILL"))
     if depths:
         verified = all(
