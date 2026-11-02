@@ -95,6 +95,7 @@ def run_session(client, model, index, offset, origin, settings):
             return {"session": index, "arrival_seconds": offset,
                     "start_lag_seconds": max(started - due, 0), "turns": rows,
                     "completed": False, "error": type(error).__name__,
+                    "attempted_turns": turn + 1, "failed_request": payload,
                     "wall_seconds": time.monotonic() - started}
         row.update(turn=turn + 1, request=json.loads(json.dumps(payload)),
                    turn_seconds=time.monotonic() - turn_started,
@@ -106,6 +107,7 @@ def run_session(client, model, index, offset, origin, settings):
         advance_messages(messages, turn, row)
     return {"session": index, "arrival_seconds": offset,
             "start_lag_seconds": max(started - due, 0), "turns": rows,
+            "attempted_turns": len(rows),
             "completed": len(rows) == 3 and all(row["completed"] for row in rows),
             "wall_seconds": time.monotonic() - started}
 
@@ -114,7 +116,7 @@ def summarise(sessions):
     rows = [row for session in sessions for row in session["turns"] if row["completed"]]
     times = sorted(row["turn_seconds"] for row in rows)
     return {"completed_sessions": sum(session["completed"] for session in sessions),
-            "completed_turns": len(rows), "attempted_turns": sum(len(s["turns"]) for s in sessions),
+            "completed_turns": len(rows), "attempted_turns": sum(s["attempted_turns"] for s in sessions),
             "time_per_completed_turn_seconds": sum(s["wall_seconds"] for s in sessions) / len(times) if times else None,
             "mean_completed_turn_seconds": sum(times) / len(times) if times else None,
             "p95_turn_seconds": times[math.ceil(.95 * len(times)) - 1] if times else None,
@@ -144,6 +146,8 @@ def validate_result(result):
             if session["session"] != index + 1 or session["arrival_seconds"] != offsets[index]:
                 errors.append("session arrival/identity mismatch")
             rows = session["turns"]
+            if session.get("attempted_turns") != len(rows) + int("error" in session):
+                errors.append("attempted turn count mismatch")
             messages = initial_messages(index + 1)
             for field in ("wall_seconds", "start_lag_seconds"):
                 if not math.isfinite(session[field]) or session[field] < 0:

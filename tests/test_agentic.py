@@ -103,7 +103,7 @@ class AgenticTest(unittest.TestCase):
         self.assertTrue(agentic.validate_result(bad))
 
     def test_tail_uses_completed_turns_with_failures_disclosed(self):
-        sessions = [{'completed': False, 'wall_seconds': 103, 'turns': [
+        sessions = [{'completed': False, 'wall_seconds': 103, 'attempted_turns': 3, 'turns': [
             {'completed': True, 'turn_seconds': 1},
             {'completed': True, 'turn_seconds': 2},
             {'completed': False, 'turn_seconds': 100}]}]
@@ -119,3 +119,14 @@ class AgenticTest(unittest.TestCase):
             'sessions': 1, 'workers': 1, 'max_tokens': 128, 'seed': 1,
             'arrival_rate': 0, 'tool_latency_seconds': 0}, 'agentic': {'sessions': []}}
         self.assertTrue(agentic.validate_result(result))
+
+    def test_request_rejection_is_still_an_attempt(self):
+        class Client:
+            def stream(self, path, payload):
+                raise OSError('rejected')
+        settings = {'max_tokens': 128, 'seed': 1, 'tool_latency_seconds': .1}
+        with patch('agentic.time.sleep'):
+            session = agentic.run_session(Client(), 'm', 1, 0, 0, settings)
+        self.assertFalse(session['completed'])
+        self.assertEqual(1, agentic.summarise([session])['attempted_turns'])
+        self.assertIn('failed_request', session)
