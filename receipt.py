@@ -319,6 +319,15 @@ def validate_result(result: Any) -> list[str]:
         ):
             errors.append(f"{path}.completion_gate does not match raw outputs")
 
+    capability = result.get("capabilities", {}).get("prefill") if isinstance(result.get("capabilities", {}), dict) else None
+    if settings.get("capability_detection"):
+        if not isinstance(capability, dict) or capability.get("status") not in ("supported", "unsupported", "unknown") or not isinstance(capability.get("reason"), str):
+            errors.append("capabilities.prefill is malformed")
+        elif capability["status"] != "supported" and settings.get("prefill_depths"):
+            errors.append("unsupported/unverified prefill must not have measured depths")
+        else:
+            for index, row in enumerate(capability.get("probe_runs", [])):
+                check_stream_row(errors, row, f"capabilities.prefill.probe_runs[{index}]", require_v11)
     depths = settings.get("prefill_depths", [])
     prefill = result.get("prefill", {})
     if not isinstance(depths, list) or not isinstance(prefill, dict):

@@ -207,6 +207,13 @@ def render(result: dict[str, Any], fingerprint: str) -> str:
         line("* Predictable JSON ceiling; not general agent performance."),
         line("Decode medians are estimates; rates include streamed reasoning."),
     ])
+    capability = result.get("capabilities", {}).get("prefill")
+    if capability:
+        lines.extend(section("BACKEND CAPABILITIES"))
+        lines.extend(wrapped_lines("Exact prefill: " + capability["status"].upper() + "; " + capability["reason"]))
+        for depth, reason in capability.get("unsupported_depths", {}).items():
+            lines.extend(wrapped_lines(f"Prefill {depth}: UNSUPPORTED; {reason}"))
+        lines.append(line("Chat decode and capped concurrency use the normal protocol."))
     lines.extend(section("PREFILL"))
     if depths:
         verified = all(
@@ -228,7 +235,8 @@ def render(result: dict[str, Any], fingerprint: str) -> str:
             lines.append(line("Cold cache UNVERIFIED: cache-hit usage unavailable."))
         lines.append(line("Medians; replay is an immediate repeat, not a proven hit."))
     else:
-        lines.append(line("NOT MEASURED: prefill skipped (--skip-prefill)."))
+        lines.extend(wrapped_lines("NOT MEASURED: exact prefill " + capability["status"] + "; " + capability["reason"])
+                     if capability else [line("NOT MEASURED: prefill skipped (--skip-prefill).")])
     lines.extend(section("CAPPED CONCURRENT GENERATION"))
     if levels:
         values = [f"C{level} {result['concurrency'][str(level)]['aggregate_end_to_end_tokens_per_second']['median']:.1f}"

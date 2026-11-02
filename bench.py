@@ -551,6 +551,34 @@ def prefill_once(
     return row
 
 
+def probe_prefill(client: Client, model: str) -> dict[str, Any]:
+    """Bounded functional probe; HTTP acceptance alone cannot prove salt isolation."""
+    evidence: dict[str, Any] = {"status": "unknown", "probe_runs": []}
+    stage = "tokenize"
+    try:
+        tokens = exact_token_ids(client, model, 64, "probe text ", secrets.token_hex(16))
+        stage = "token-ID completions/cache_salt"
+        salt = secrets.token_urlsafe(32)
+        for value in (salt, salt, secrets.token_urlsafe(32)):
+            evidence["probe_runs"].append(prefill_once(client, model, tokens, value))
+    except urllib.error.HTTPError as error:
+        if error.code not in (400, 404, 405, 422, 501):
+            raise
+        evidence.update(status="unsupported", reason=f"{stage}: HTTP {error.code}")
+        return evidence
+    except RuntimeError as error:
+        evidence.update(status="unsupported", reason=f"{stage}: {error}")
+        return evidence
+    first, replay, isolated = [row.get("cached_prompt_tokens") for row in evidence["probe_runs"]]
+    if first is not None and first > 0 or isolated is not None and isolated > 0:
+        evidence.update(status="unsupported", reason="fresh cache salt reported cached tokens")
+    elif first == 0 and isolated == 0 and replay is not None and replay > 0:
+        evidence.update(status="supported", reason="exact token counts and cross-salt isolation observed")
+    else:
+        evidence.update(reason="cache-salt isolation unverified: need zero first/cross-salt counts and a reported replay hit")
+    return evidence
+
+
 def run_prefill(
     client: Client,
     model: str,
@@ -770,6 +798,8 @@ def main() -> None:
     parser.add_argument("--concurrency-tokens", type=int, default=256)
     parser.add_argument("--concurrency-workload", choices=("code", "prose"), default="code")
     parser.add_argument("--extra-body", default="{}", help="JSON merged into every chat request")
+    parser.add_argument("--detect-capabilities", action="store_true",
+                        help="probe exact prefill and retain reasons for unsupported phases/depths")
     parser.add_argument("--skip-prefill", action="store_true")
     parser.add_argument("--skip-concurrency", action="store_true")
     parser.add_argument("--timeout", type=float, default=1800)
@@ -788,7 +818,7 @@ def main() -> None:
         filename_label = safe_label(args.label)
         metadata = load_metadata(args.metadata)
         extra_body = json.loads(args.extra_body)
-        if not args.skip_prefill:
+        if not args.skip_prefill and not args.detect_capabilities:
             validate_prefill_depths(args.prefill_depths, metadata["context_limit"])
     except (json.JSONDecodeError, OSError, ValueError) as error:
         parser.error(str(error))
@@ -804,6 +834,20 @@ def main() -> None:
         if len(models) != 1:
             parser.error("--model auto requires the endpoint to advertise exactly one model")
         model = str(models[0]["id"])
+
+    capabilities = None
+    effective_depths = [] if args.skip_prefill else args.prefill_depths
+    if args.detect_capabilities and not args.skip_prefill:
+        capabilities = {"prefill": probe_prefill(client, model)}
+        capabilities["prefill"]["requested_depths"] = args.prefill_depths
+        capabilities["prefill"]["unsupported_depths"] = {
+            str(depth): "depth plus 8 output tokens exceeds declared context limit"
+            for depth in args.prefill_depths if depth + 8 > metadata["context_limit"]
+        }
+        effective_depths = [depth for depth in args.prefill_depths
+                            if depth + 8 <= metadata["context_limit"]]
+        if capabilities["prefill"]["status"] != "supported":
+            effective_depths = []
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     output = args.output or Path("results") / f"{filename_label}-{timestamp}.json"
@@ -843,7 +887,7 @@ def main() -> None:
             "top_p": 1.0,
             "seed": args.seed,
             "extra_body": extra_body,
-            "prefill_depths": [] if args.skip_prefill else args.prefill_depths,
+            "prefill_depths": effective_depths,
             "prefill_runs": args.prefill_runs,
             "prefill_cache_isolation": "random-salt-per-pair",
             "concurrency": [] if args.skip_concurrency else args.concurrency,
@@ -853,6 +897,9 @@ def main() -> None:
         },
     }
 
+    if capabilities is not None:
+        result["capabilities"] = capabilities
+        result["settings"]["capability_detection"] = True
     try:
         result["decode"] = run_decode(
             client,
@@ -864,12 +911,12 @@ def main() -> None:
             extra_body,
             args.comparison_id,
         )
-        if not args.skip_prefill:
+        if effective_depths:
             result["prefill"] = run_prefill(
                 client,
                 model,
                 prompts,
-                args.prefill_depths,
+                effective_depths,
                 args.prefill_runs,
                 args.comparison_id,
             )

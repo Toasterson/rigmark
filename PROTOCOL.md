@@ -172,3 +172,29 @@ prints each changed suite flag, the complete extra request body, and comparison
 ID. "DEFAULT SETTINGS" describes the suite parameters, not a universal model
 reasoning profile: the separately printed request body remains part of the
 comparison. Hardware and request settings wrap rather than being truncated.
+
+### Opt-in backend capability detection
+
+`run --detect-capabilities` probes exact prefill before the suite. It attempts
+RigMark's `/tokenize` request and three 64-token token-ID completions: fresh
+salt A, replay A, then fresh salt B (8 output tokens each). Receipt field
+`capabilities.prefill` retains the raw probe rows, status and reason, requested
+depths, and depths excluded by the declared context limit. Probe requests are
+excluded from phase summaries. Decode and capped concurrency run normally.
+
+Exact prefill is `supported` only when token counts match, first and cross-salt
+counts are zero, and replay reports a cache hit. Acceptance of an ignored
+`cache_salt` is not enough. Missing counts or an always-disabled cache yield
+`unknown`; exact prefill is conservatively omitted. Documented request
+rejections (HTTP 400/404/405/422/501), bad token IDs/counts or observed cross-salt
+hits yield `unsupported`. Authentication, rate limits, timeouts and outages
+remain errors; they are not misreported as unsupported. This bounded probe is
+server evidence, not proof that salt isolation holds at every context depth.
+
+Unsupported/unverified prefill does not produce invented rates or a default
+full-suite card. Effective measured depths stay in `settings.prefill_depths`,
+so old renderers and validators still recognise a partial suite; the new card
+prints the reason. No flag retains existing strict behaviour, and an explicit
+`--skip-prefill` takes precedence over detection. For llama.cpp, the vLLM-style
+`prompt` tokenizer input commonly fails; the server's different native
+`content` tokenisation API is not silently substituted into this protocol.
