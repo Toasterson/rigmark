@@ -104,7 +104,7 @@ def cached_token_usage(usage: dict[str, Any], prompt: int) -> tuple[int | None, 
         "usage.prompt_tokens_details.cached_tokens": (
             details.get("cached_tokens") if isinstance(details, dict) else None
         ),
-        # SGLang's OpenAI-compatible usage extension.
+        # DeepSeek's documented usage extension.
         "usage.prompt_cache_hit_tokens": usage.get("prompt_cache_hit_tokens"),
     }
     present = {source: value for source, value in candidates.items() if value is not None}

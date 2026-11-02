@@ -178,7 +178,7 @@ comparison. Hardware and request settings wrap rather than being truncated.
 Every streamed request retains `cached_prompt_tokens` (integer, including zero,
 or JSON null) and additive `cache_evidence`: `status` is `reported` or `unknown`,
 with the exact `source` usage field or null. Recognised fields are OpenAI-style
-`usage.prompt_tokens_details.cached_tokens` and SGLang's
+`usage.prompt_tokens_details.cached_tokens` and [DeepSeek's](https://api-docs.deepseek.com/api/create-chat-completion/)
 `usage.prompt_cache_hit_tokens`. Invalid or conflicting counts fail the request.
 No inference from TTFT or replay speed is made. Existing receipts without the
 additive object remain valid; missing/null counts mean unknown, never zero.
