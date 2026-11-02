@@ -45,3 +45,27 @@ class CapabilitiesTest(unittest.TestCase):
         result['settings']['prefill_depths'] = []
         result['capabilities']['prefill'].update(status='unknown', probe_runs=None)
         self.assertTrue(any('probe_runs is malformed' in e for e in validate_result(result)))
+
+    def test_detection_omits_only_prefill_and_keeps_chat_phases(self):
+        argv = ['bench.py', '--base-url', 'http://localhost:1', '--model', 'm',
+                '--label', 'test', '--comparison-id', 'id', '--metadata', 'unused',
+                '--detect-capabilities']
+        with patch('sys.argv', argv), \
+             patch('bench.load_metadata', return_value={'context_limit': 4096}), \
+             patch('bench.probe_prefill', return_value={'status': 'unsupported', 'reason': 'tokenize: HTTP 400', 'probe_runs': []}), \
+             patch('bench.run_decode', return_value={}) as decode, \
+             patch('bench.run_prefill') as prefill, \
+             patch('bench.run_concurrency', return_value={}) as concurrency, \
+             patch('bench.write_result') as write, \
+             patch('release_check.check_release', return_value={'status': 'identical'}), \
+             patch('release_check.format_check', return_value='current'), \
+             patch('report.save_report', return_value=Path('unused.card.txt')), \
+             patch('report.print_report'), patch('builtins.print'):
+            bench.main()
+        decode.assert_called_once()
+        concurrency.assert_called_once()
+        prefill.assert_not_called()
+        result = write.call_args.args[0]
+        self.assertEqual([], result['settings']['prefill_depths'])
+        self.assertEqual('unsupported', result['capabilities']['prefill']['status'])
+        self.assertEqual(3, len(result['capabilities']['prefill']['unsupported_depths']))
