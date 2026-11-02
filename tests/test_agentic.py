@@ -130,3 +130,12 @@ class AgenticTest(unittest.TestCase):
         self.assertFalse(session['completed'])
         self.assertEqual(1, agentic.summarise([session])['attempted_turns'])
         self.assertIn('failed_request', session)
+
+    def test_card_order_survives_sorted_receipt_serialisation(self):
+        summary = {'completed_turns': 0, 'attempted_turns': 1, 'completed_sessions': 0}
+        result = {'agentic': {'summary': summary}, 'settings': {},
+                  'run': {'appliance': {}}, 'protocol': {}}
+        with patch('agentic.validate_result', return_value=[]):
+            before = agentic.render(result, 'a' * 64)
+            after = agentic.render(json.loads(json.dumps(result, sort_keys=True)), 'a' * 64)
+        self.assertEqual(before, after)

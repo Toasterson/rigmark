@@ -192,8 +192,8 @@ def render(result, fingerprint):
     summary = result["agentic"]["summary"]
     lines = [rule("╭", "─", "╮"), line("RIGMARK // OPT-IN TOOL/HISTORY PROFILE"),
              line("Separate synthetic serving profile; not a coding quality score.")]
-    for key, value in summary.items():
-        lines.extend(wrapped_lines(f"{key}: {value}"))
+    for key in sorted(summary):
+        lines.extend(wrapped_lines(f"{key}: {summary[key]}"))
     lines.extend(wrapped_lines("Settings: " + json.dumps(result["settings"], sort_keys=True)))
     lines.extend(wrapped_lines("Appliance: " + json.dumps(result["run"]["appliance"], sort_keys=True)))
     lines.extend(wrapped_lines("Source: " + json.dumps(result["protocol"], sort_keys=True)))
